@@ -8,71 +8,26 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from imblearn.over_sampling import SMOTE
 
-# Função para carregar e pré-processar os dados
-def carregar_dados():
-    # Carregar o DataFrame com os dados (você pode substituir com o caminho do seu arquivo)
-    df2 = pd.read_excel('dados_case.xlsx', sheet_name='dados')
+coef = {
+    'const': 0.567964,
+    'genero_Masculino': 0.162199,
+    'nivel_escolaridade_Médio': -0.208041,
+    'nivel_escolaridade_Pós-graduação': -0.584570,
+    'Faixa_renda_4001-6000': -0.271105,
+    'Faixa_renda_6001-10000': -0.226520,
+    'Faixa_renda_Até 2000': -0.192529,
+    'Faixa_idade_36-50': 0.338755,
+    'Faixa_idade_51-70': 0.302021,
+    'Faixa_Score_501-600': -0.364174,
+    'Faixa_Score_601-700': -0.685427,
+    'Faixa_Score_701-800': -0.838719,
+    'Faixa_Score_801-850': -0.961575,
+    'Faixa_Score_Até 400': 0.117366}
 
-    # Definir colunas numéricas e categóricas
-    numeric_features = ['contas_bancarias']
-    categorical_feats = ['genero', 'localizacao', 'nivel_escolaridade', 'Faixa_renda', 'Faixa_idade', 'Faixa_Score']
 
-    # Separar variáveis independentes e dependentes
-    var_x = df2[numeric_features + categorical_feats]
-    var_y = df2['Atraso_apos_6meses']
 
-    # Dividir em treino e teste
-    X_train, X_test, y_train, y_test = train_test_split(var_x, var_y, test_size=0.2, random_state=123, stratify=var_y)
-
-    # Pipeline de pré-processamento
-    preprocessor = ColumnTransformer([
-        ('n', MinMaxScaler(), numeric_features),
-        ('c', OneHotEncoder(sparse_output=False, handle_unknown='ignore', drop='first'), categorical_feats),
-    ])
-
-    # Aplicando o pré-processamento nos dados de treino e teste
-    X_train_p = preprocessor.fit_transform(X_train)
-    X_test_p = preprocessor.transform(X_test)
-
-    # Aplicando SMOTE no conjunto de treino
-    smote = SMOTE(sampling_strategy='auto', random_state=123)
-    X_train_res, y_train_res = smote.fit_resample(X_train_p, y_train)
-
-    return preprocessor, X_train_res, y_train_res, X_test_p, y_test
-
-# Função para treinar o modelo
-def treinar_modelo(X_train_res, y_train_res, preprocessor):
-    # Nomes das variáveis transformadas
-    feat_names = preprocessor.get_feature_names_out()
-
-    # Treinando o modelo Logit com os dados balanceados após o SMOTE
-    X_train_res_sm = pd.DataFrame(X_train_res, columns=feat_names)
-    X_train_res_sm = sm.add_constant(X_train_res_sm)  # Adicionar constante (intercepto)
-    
-    # Modelo Logit
-    logit_model = sm.Logit(y_train_res, X_train_res_sm).fit(disp=False)
-
-    return logit_model
-
-# Função para prever a inadimplência de um novo cliente
-def prever_inadimplencia(cliente_info, logit_model):
-    logit = logit_model.params['const']
-    for feature, value in cliente_info.items():
-        if feature in logit_model.params:
-            logit += logit_model.params[feature] * value
-
-    probabilidade = 1 / (1 + np.exp(-logit))  
-    threshold = 0.6
-    classe = 1 if probabilidade >= threshold else 0
-    
-    return probabilidade, classe
-
-# ------------------------ Layout Streamlit ------------------------ #
-st.title('Previsão de Inadimplência de Clientes')
-
-# Carregar e treinar o modelo
-preprocessor, X_train_res, y_train_res, X_test_p, y_test = carregar_dados()
-logit_model = treinar_modelo(X_train_res, y_train_res, preprocessor)
+# Interface do usuário no Streamlit
+st.title('Previsão de Inadimplência')
 
 # Inputs do usuário
 genero = st.selectbox('Gênero:', ['Masculino', 'Feminino'])
@@ -98,14 +53,22 @@ novo_cliente = {
     'Faixa_Score_Até 400': 1 if faixa_score == 'Até 400' else 0
 }
 
-# Botão para gerar a previsão
-if st.button('Gerar Previsão'):
-    # Prever a inadimplência do novo cliente
-    probabilidade, classe = prever_inadimplencia(novo_cliente, logit_model)
+# logit(p)
+logit = coef['const']
+for feature, value in novo_cliente.items():
+    if feature in coef:
+        logit += coef[feature] * value
 
-    # Exibir a probabilidade de inadimplência e a classificação
-    st.write(f'A probabilidade de inadimplência do cliente é: {probabilidade:.2f}')
-    if classe == 1:
-        st.write("O cliente será INADIMPLENTE.")
-    else:
-        st.write("O cliente será ADIMPLENTE.")
+# probabilidade de inadimplência
+probabilidade = 1 / (1 + np.exp(-logit))
+
+# Exibir a probabilidade de inadimplência
+st.write(f"Probabilidade de inadimplência do novo cliente: {probabilidade*100:.4}%")
+
+# Threshold para classificar como inadimplente ou adimplente
+threshold = 0.4
+classe = 1 if probabilidade >= threshold else 0
+if classe == 1:
+    st.write("O cliente será INADIMPLENTE.")
+else:
+    st.write("O cliente será ADIMPLENTE.")
